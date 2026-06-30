@@ -387,9 +387,10 @@ function makeCard(post) {
 
   card.addEventListener('dragstart', e => {
     dragId      = post.id;
-    isDuplicate = optionHeld;
+    optionHeld  = e.altKey;          // read modifier directly from the event
+    isDuplicate = e.altKey;
     updateDupeTip();
-    e.dataTransfer.effectAllowed = isDuplicate ? 'copy' : 'move';
+    e.dataTransfer.effectAllowed = 'copyMove';
     setTimeout(() => card.classList.add('dragging'), 0);
   });
 
@@ -409,7 +410,9 @@ function makeCard(post) {
 function setupDropTarget(el, date) {
   el.addEventListener('dragover', e => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = optionHeld ? 'copy' : 'move';
+    optionHeld = e.altKey;           // keep modifier state live during the drag
+    updateDupeTip();
+    e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
     if (dropTarget !== el) {
       if (dropTarget) dropTarget.classList.remove('drop-on');
       dropTarget = el;
@@ -433,7 +436,7 @@ function setupDropTarget(el, date) {
     const post = state.posts[dragId];
     if (!post) return;
 
-    if (isDuplicate || optionHeld) {
+    if (e.altKey || isDuplicate || optionHeld) {
       const copy = {
         ...post,
         id:       uid(),
