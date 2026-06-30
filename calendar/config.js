@@ -15,5 +15,5 @@
    browser apps and is governed by the database's access rules.
    ============================================================ */
 
-window.SUPABASE_URL      = 'https://YOUR-PROJECT.supabase.co';
-window.SUPABASE_ANON_KEY = 'YOUR-ANON-KEY';
+window.SUPABASE_URL      = 'https://vrybjrbtcatvzjvjngai.supabase.co';
+window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZyeWJqcmJ0Y2F0dnpqdmpuZ2FpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4MjcwMDEsImV4cCI6MjA5ODQwMzAwMX0.o9EWt6GI6p0O4oJexZF1rW7jBUnBHuliM_s1W6j7TWc';
