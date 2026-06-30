@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Content Calendar</title>
+  <link rel="stylesheet" href="calendar.css">
+</head>
+<body>
+
+  <!-- ═══════════════════════════ HEADER -->
+  <div id="hdr">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="white">
+          <rect x="1" y="4" width="14" height="11" rx="2"/>
+          <rect x="4" y="1" width="2" height="5" rx="1"/>
+          <rect x="10" y="1" width="2" height="5" rx="1"/>
+          <rect x="3" y="8" width="2" height="2" rx=".4"/>
+          <rect x="7" y="8" width="2" height="2" rx=".4"/>
+          <rect x="11" y="8" width="2" height="2" rx=".4"/>
+          <rect x="3" y="11" width="2" height="2" rx=".4"/>
+          <rect x="7" y="11" width="2" height="2" rx=".4"/>
+        </svg>
+      </div>
+      Content Calendar
+    </div>
+
+    <div class="nav-cluster">
+      <button class="ibtn" id="prev-btn">‹</button>
+      <button class="ibtn" id="today-btn">Today</button>
+      <button class="ibtn" id="next-btn">›</button>
+      <span id="period-lbl"></span>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="vtoggle">
+      <button class="vtbtn on" data-view="month">Month</button>
+      <button class="vtbtn"    data-view="week">Week</button>
+    </div>
+
+    <button id="new-btn">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <path d="M6 1v10M1 6h10" stroke="white" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      New post
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════ CAMPAIGN BAR -->
+  <div id="cbar">
+    <!-- pills injected by JS -->
+    <button id="camp-btn">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="6" cy="6" r="5"/>
+        <circle cx="6" cy="6" r="2"/>
+      </svg>
+      Campaigns
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════ CALENDAR -->
+  <div id="cal-wrap">
+    <div id="cal"></div>
+  </div>
+
+  <!-- ═══════════════════════════ POST MODAL -->
+  <div class="overlay" id="post-ov">
+    <div class="modal" id="post-modal">
+      <div class="mhdr">
+        <span class="mhdr-title" id="post-modal-ttl">New post</span>
+        <button class="mclose" id="post-modal-x">×</button>
+      </div>
+      <div class="mbody" id="post-modal-body"></div>
+      <div class="mftr"  id="post-modal-ftr"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ CAMPAIGN MODAL -->
+  <div class="overlay" id="camp-ov">
+    <div class="modal" style="width:440px">
+      <div class="mhdr">
+        <span class="mhdr-title">Manage campaigns</span>
+        <button class="mclose" id="camp-modal-x">×</button>
+      </div>
+      <div class="mbody" id="camp-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ UTILITIES -->
+  <div id="toast"></div>
+  <div id="dupe-tip">⌥ Duplicate</div>
+
+  <script src="app.js"></script>
+</body>
+</html>
