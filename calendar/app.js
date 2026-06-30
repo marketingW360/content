@@ -811,6 +811,12 @@ function buildPostModal(isNew) {
       showToast('Post deleted');
     });
     ftr.appendChild(delBtn);
+
+    const dupBtn = document.createElement('button');
+    dupBtn.className   = 'btn btn-s';
+    dupBtn.textContent = '⧉ Duplicate';
+    dupBtn.addEventListener('click', () => duplicateCurrentPost());
+    ftr.appendChild(dupBtn);
   }
 
   const spacer = document.createElement('div');
@@ -862,6 +868,23 @@ function commitPost() {
   render();
   closePostModal();
   showToast(editingId ? 'Post updated ✓' : 'Post created ✓');
+}
+
+function duplicateCurrentPost() {
+  // Copy the current edit buffer to a brand-new post on the same date.
+  const copy = {
+    ...editBuffer,
+    id:            uid(),
+    parentId:      editingId,
+    repeatType:    'none',   // the copy doesn't inherit the repeat schedule
+    repeatEndDate: '',
+    files:         (editBuffer.files || []).map(f => ({ ...f })),
+  };
+  state.posts[copy.id] = copy;
+  saveState();
+  render();
+  closePostModal();
+  showToast('Post duplicated ✓');
 }
 
 function generateRepeatPosts(post) {
