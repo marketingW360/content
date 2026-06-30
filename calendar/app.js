@@ -375,6 +375,7 @@ function makeCard(post) {
   card.draggable = true;
 
   card.innerHTML =
+    `<button class="pc-dup" title="Duplicate">⧉</button>` +
     `<div class="pc-title">${escHtml(post.title || 'Untitled')}</div>` +
     `<div class="pc-bottom">` +
       (post.time ? `<span class="pc-time">${post.time}</span>` : '') +
@@ -382,6 +383,11 @@ function makeCard(post) {
       (post.repeatType && post.repeatType !== 'none' ? `<span class="pc-icon" title="Repeating">↻</span>` : '') +
       (post.files && post.files.length ? `<span class="pc-icon" title="Has files">📎</span>` : '') +
     `</div>`;
+
+  card.querySelector('.pc-dup').addEventListener('click', e => {
+    e.stopPropagation();
+    duplicatePost(post.id);
+  });
 
   card.addEventListener('click', e => { e.stopPropagation(); openEditPost(post.id); });
 
@@ -870,21 +876,28 @@ function commitPost() {
   showToast(editingId ? 'Post updated ✓' : 'Post created ✓');
 }
 
-function duplicateCurrentPost() {
-  // Copy the current edit buffer to a brand-new post on the same date.
+function duplicatePost(id) {
+  // Copy an existing post to a brand-new post on the same date.
+  const src = state.posts[id];
+  if (!src) return;
   const copy = {
-    ...editBuffer,
+    ...src,
     id:            uid(),
-    parentId:      editingId,
+    parentId:      id,
     repeatType:    'none',   // the copy doesn't inherit the repeat schedule
     repeatEndDate: '',
-    files:         (editBuffer.files || []).map(f => ({ ...f })),
+    files:         (src.files || []).map(f => ({ ...f })),
   };
   state.posts[copy.id] = copy;
   saveState();
   render();
-  closePostModal();
   showToast('Post duplicated ✓');
+}
+
+function duplicateCurrentPost() {
+  const id = editingId;
+  closePostModal();
+  duplicatePost(id);
 }
 
 function generateRepeatPosts(post) {
