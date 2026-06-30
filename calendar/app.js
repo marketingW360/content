@@ -473,8 +473,9 @@ function setupDropTarget(el, date) {
 // POST MODAL
 // ─────────────────────────────────────────────────
 
-let editingId   = null;  // null = new post
-let editBuffer  = null;  // in-progress edits
+let editingId      = null;   // null = new post
+let editBuffer     = null;   // in-progress edits
+let editOrigRepeat = 'none'; // the post's repeat setting when the editor opened
 
 function openNewPost(date = todayStr()) {
   editingId  = null;
@@ -493,8 +494,9 @@ function openNewPost(date = todayStr()) {
 }
 
 function openEditPost(id) {
-  editingId  = id;
-  const post = state.posts[id];
+  editingId      = id;
+  const post     = state.posts[id];
+  editOrigRepeat = post.repeatType || 'none';   // remember if it was already a series
   editBuffer = { ...post };
   buildPostModal(false);
   document.getElementById('post-ov').classList.add('open');
@@ -667,14 +669,13 @@ function commitPost() {
   const isNew = !editingId;
   const post = { ...editBuffer };
 
-  // Remove old repeat children when re-saving
-  if (editingId) {
-    Object.keys(state.posts).forEach(id => {
-      if (state.posts[id].parentId === editingId) { remoteDeletePost(id); delete state.posts[id]; }
-    });
-  }
-
-  if (post.repeatType !== 'none') {
+  // Each card is independent. Repeat occurrences are only generated when a repeat
+  // is first turned on — either on a brand-new post, or when an existing
+  // non-repeating post is switched to weekly/monthly. Editing a post never
+  // deletes or regenerates other cards, so duplicates and existing series stay put.
+  const wasRepeating = !isNew && editOrigRepeat !== 'none';
+  const nowRepeating = post.repeatType && post.repeatType !== 'none';
+  if ((isNew || !wasRepeating) && nowRepeating) {
     generateRepeatPosts(post);
   }
 
@@ -693,8 +694,8 @@ function duplicatePost(id) {
   const copy = {
     ...src,
     id:            uid(),
-    parentId:      id,
-    repeatType:    'none',   // the copy doesn't inherit the repeat schedule
+    parentId:      null,     // a duplicate is an independent post, not a child
+    repeatType:    'none',   // and doesn't inherit the repeat schedule
     repeatEndDate: '',
   };
   state.posts[copy.id] = copy;
