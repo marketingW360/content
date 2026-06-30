@@ -375,7 +375,7 @@ function makeCard(post) {
   card.draggable = true;
 
   card.innerHTML =
-    `<button class="pc-dup" title="Duplicate">⧉</button>` +
+    `<button class="pc-dup" title="Duplicate"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5.5" y="5.5" width="9" height="9" rx="1.6"/><path d="M10.5 5.5V3a1.6 1.6 0 0 0-1.6-1.6H3A1.6 1.6 0 0 0 1.4 3v5.9A1.6 1.6 0 0 0 3 10.5h2.5"/></svg></button>` +
     `<div class="pc-title">${escHtml(post.title || 'Untitled')}</div>` +
     `<div class="pc-bottom">` +
       (post.time ? `<span class="pc-time">${post.time}</span>` : '') +
@@ -820,7 +820,7 @@ function buildPostModal(isNew) {
 
     const dupBtn = document.createElement('button');
     dupBtn.className   = 'btn btn-s';
-    dupBtn.textContent = '⧉ Duplicate';
+    dupBtn.innerHTML   = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5.5" y="5.5" width="9" height="9" rx="1.6"/><path d="M10.5 5.5V3a1.6 1.6 0 0 0-1.6-1.6H3A1.6 1.6 0 0 0 1.4 3v5.9A1.6 1.6 0 0 0 3 10.5h2.5"/></svg> Duplicate';
     dupBtn.addEventListener('click', () => duplicateCurrentPost());
     ftr.appendChild(dupBtn);
   }
