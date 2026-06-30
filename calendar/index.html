@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Content Calendar</title>
-  <link rel="stylesheet" href="calendar.css?v=5">
+  <link rel="stylesheet" href="calendar.css?v=7">
 </head>
 <body>
 
@@ -26,6 +26,8 @@
       Content Calendar
     </div>
 
+    <span id="sync-status" class="sync-pill sync-off" title="">Local only</span>
+
     <div class="nav-cluster">
       <button class="ibtn" id="prev-btn">‹</button>
       <button class="ibtn" id="today-btn">Today</button>
@@ -39,6 +41,13 @@
       <button class="vtbtn on" data-view="month">Month</button>
       <button class="vtbtn"    data-view="week">Week</button>
     </div>
+
+    <button class="ibtn" id="backup-btn" title="Backup, share & activity log" style="font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M8 1v8M8 9 5 6M8 9l3-3"/><path d="M2 11v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2"/>
+      </svg>
+      Backup
+    </button>
 
     <button id="new-btn">
       <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
@@ -88,10 +97,25 @@
     </div>
   </div>
 
+  <!-- ═══════════════════════════ BACKUP / SYNC MODAL -->
+  <div class="overlay" id="backup-ov">
+    <div class="modal" style="width:520px">
+      <div class="mhdr">
+        <span class="mhdr-title">Backup &amp; share</span>
+        <button class="mclose" id="backup-modal-x">×</button>
+      </div>
+      <div class="mbody" id="backup-modal-body"></div>
+    </div>
+  </div>
+
   <!-- ═══════════════════════════ UTILITIES -->
   <div id="toast"></div>
   <div id="dupe-tip">⌥ Duplicate</div>
 
-  <script src="app.js?v=5"></script>
+  <!-- Supabase client library (for the optional shared calendar) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="supabase.js?v=7"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

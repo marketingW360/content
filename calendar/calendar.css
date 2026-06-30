@@ -94,6 +94,31 @@ body {
   margin-left: 10px;
 }
 
+/* ── Sync status pill ── */
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px 3px 8px;
+  border-radius: 20px;
+  letter-spacing: .01em;
+  white-space: nowrap;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+.sync-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.sync-on         { background: #DCFCE7; color: #15803D; }
+.sync-off        { background: var(--bg); color: var(--text3); }
+.sync-connecting { background: #FEF3C7; color: #B45309; }
+
 .ibtn {
   background: none;
   border: 1px solid var(--border);
@@ -818,3 +843,68 @@ body {
 }
 
 .mdivider { border: none; border-top: 1px solid var(--border); margin: 2px 0; }
+
+/* ─────────────────────────────────────────────────
+   ACTIVITY LOG
+───────────────────────────────────────────────── */
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 6px;
+  background: var(--surface2);
+}
+.log-empty {
+  font-size: 12.5px;
+  color: var(--text3);
+  text-align: center;
+  padding: 20px 10px;
+}
+.log-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "act ttl when" "act meta meta";
+  gap: 1px 9px;
+  align-items: center;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.log-act {
+  grid-area: act;
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  align-self: center;
+}
+.log-created    { background: var(--accent-l); color: var(--accent); }
+.log-duplicated { background: #DBEAFE; color: #1D4ED8; }
+.log-ttl {
+  grid-area: ttl;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-meta {
+  grid-area: meta;
+  font-size: 10.5px;
+  color: var(--text3);
+}
+.log-when {
+  grid-area: when;
+  font-size: 10.5px;
+  color: var(--text3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

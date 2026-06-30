@@ -52,6 +52,7 @@ const state = {
   view:       'month',  // 'month' | 'week'
   weekStart:  weekStartStr(now),
   filters:    new Set(), // Set of campaignIds to show; empty = show all
+  log:        [],        // activity log entries, newest first
 };
 
 // ─────────────────────────────────────────────────
@@ -65,6 +66,7 @@ function loadState() {
       const saved = JSON.parse(raw);
       state.posts     = saved.posts     || {};
       state.campaigns = saved.campaigns || {};
+      state.log       = saved.log       || [];
     }
   } catch (e) {
     console.warn('Content Calendar: failed to load saved data', e);
@@ -76,18 +78,35 @@ function loadState() {
   }
 }
 
-function saveState() {
+/** Write to the local browser cache only (no cloud push). */
+function cacheLocal() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       posts:     state.posts,
       campaigns: state.campaigns,
+      log:       state.log,
     }));
   } catch (e) {
-    // Storage quota exceeded (common with base64 images)
-    showToast('⚠ Storage full — large file attachments may not persist');
+    showToast('⚠ Storage full — could not save');
     console.warn('Content Calendar: localStorage quota exceeded', e);
   }
 }
+
+/** Save locally and, if a shared calendar is connected, push to the cloud. */
+function saveState() {
+  cacheLocal();
+  schedulePush();
+}
+
+let _pushTimer = null;
+function schedulePush() {
+  if (!(window.Remote && Remote.enabled)) return;
+  clearTimeout(_pushTimer);
+  _pushTimer = setTimeout(() => Remote.pushAll(state.posts, state.campaigns), 400);
+}
+
+function remoteDeletePost(id)     { if (window.Remote && Remote.enabled) Remote.deletePost(id); }
+function remoteDeleteCampaign(id) { if (window.Remote && Remote.enabled) Remote.deleteCampaign(id); }
 
 // ─────────────────────────────────────────────────
 // HELPERS
@@ -133,25 +152,11 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function formatFileSize(bytes) {
-  if (bytes < 1024)    return bytes + 'B';
-  if (bytes < 1048576) return (bytes / 1024).toFixed(0) + 'KB';
-  return (bytes / 1048576).toFixed(1) + 'MB';
-}
-
-function fileIcon(mimeType) {
-  if (!mimeType)                         return '📄';
-  if (mimeType.startsWith('image/'))     return '🖼';
-  if (mimeType.startsWith('video/'))     return '🎬';
-  if (mimeType === 'application/pdf')    return '📕';
-  return '📄';
-}
-
 function statusLabel(s) {
   return { draft: 'Draft', scheduled: 'Scheduled', published: 'Published' }[s] || 'Draft';
 }
 
-/** Posts for a given date string, sorted by time, filtered by active campaigns */
+/** Posts for a given date string, sorted by title, filtered by active campaigns */
 function postsForDate(date) {
   const all = Object.values(state.posts);
   const filtered = state.filters.size
@@ -159,7 +164,7 @@ function postsForDate(date) {
     : all;
   return filtered
     .filter(p => p.date === date)
-    .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 }
 
 // ─────────────────────────────────────────────────
@@ -378,10 +383,8 @@ function makeCard(post) {
     `<button class="pc-dup" title="Duplicate"><svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5.5" y="5.5" width="9" height="9" rx="1.6"/><path d="M10.5 5.5V3a1.6 1.6 0 0 0-1.6-1.6H3A1.6 1.6 0 0 0 1.4 3v5.9A1.6 1.6 0 0 0 3 10.5h2.5"/></svg></button>` +
     `<div class="pc-title">${escHtml(post.title || 'Untitled')}</div>` +
     `<div class="pc-bottom">` +
-      (post.time ? `<span class="pc-time">${post.time}</span>` : '') +
       `<span class="pc-badge" style="background:${ss.bg};color:${ss.color}">${statusLabel(post.status)}</span>` +
       (post.repeatType && post.repeatType !== 'none' ? `<span class="pc-icon" title="Repeating">↻</span>` : '') +
-      (post.files && post.files.length ? `<span class="pc-icon" title="Has files">📎</span>` : '') +
     `</div>`;
 
   card.querySelector('.pc-dup').addEventListener('click', e => {
@@ -478,14 +481,11 @@ function openNewPost(date = todayStr()) {
   editBuffer = {
     id:            uid(),
     title:         '',
-    text:          '',
     date,
-    time:          '',
     campaignId:    Object.keys(state.campaigns)[0] || '',
     status:        'draft',
     repeatType:    'none',
     repeatEndDate: '',
-    files:         [],
     parentId:      null,
   };
   buildPostModal(true);
@@ -495,7 +495,7 @@ function openNewPost(date = todayStr()) {
 function openEditPost(id) {
   editingId  = id;
   const post = state.posts[id];
-  editBuffer = { ...post, files: (post.files || []).map(f => ({ ...f })) };
+  editBuffer = { ...post };
   buildPostModal(false);
   document.getElementById('post-ov').classList.add('open');
 }
@@ -545,54 +545,6 @@ function buildPostModal(isNew) {
   titleInput.addEventListener('input', () => { editBuffer.title = titleInput.value; });
   titleFg.appendChild(titleInput);
   body.appendChild(titleFg);
-
-  // ── Post text ───────────────────────────────
-  const textFg   = makeFormGroup('Post content');
-  const textarea = document.createElement('textarea');
-  textarea.className   = 'fta';
-  textarea.placeholder = 'Write your LinkedIn post content here…';
-  textarea.value       = editBuffer.text;
-
-  const charCount = document.createElement('div');
-  charCount.className = 'char-ct';
-
-  const updateCharCount = () => {
-    const len = textarea.value.length;
-    editBuffer.text = textarea.value;
-    charCount.textContent = `${len.toLocaleString()} / 3,000`;
-    charCount.className = 'char-ct'
-      + (len > 3000 ? ' over' : len > 2700 ? ' warn' : '');
-  };
-  textarea.addEventListener('input', updateCharCount);
-  updateCharCount();
-
-  textFg.appendChild(textarea);
-  textFg.appendChild(charCount);
-  body.appendChild(textFg);
-
-  // ── Date & Time ─────────────────────────────
-  const dtRow = document.createElement('div');
-  dtRow.className = 'frow';
-
-  const dateFg    = makeFormGroup('Date');
-  const dateInput = document.createElement('input');
-  dateInput.className = 'fi';
-  dateInput.type  = 'date';
-  dateInput.value = editBuffer.date;
-  dateInput.addEventListener('change', () => { editBuffer.date = dateInput.value; });
-  dateFg.appendChild(dateInput);
-  dtRow.appendChild(dateFg);
-
-  const timeFg    = makeFormGroup('Time');
-  const timeInput = document.createElement('input');
-  timeInput.className = 'fi';
-  timeInput.type  = 'time';
-  timeInput.value = editBuffer.time;
-  timeInput.addEventListener('change', () => { editBuffer.time = timeInput.value; });
-  timeFg.appendChild(timeInput);
-  dtRow.appendChild(timeFg);
-
-  body.appendChild(dtRow);
 
   // ── Status ──────────────────────────────────
   const statusFg  = makeFormGroup('Status');
@@ -662,143 +614,6 @@ function buildPostModal(isNew) {
   repeatFg.appendChild(endDateGroup);
   body.appendChild(repeatFg);
 
-  // ── File attachments ─────────────────────────
-  const filesFg  = makeFormGroup('Attachments');
-  const dropZone = document.createElement('div');
-  dropZone.className = 'drop-zone';
-  dropZone.innerHTML =
-    `<div class="dz-icon">📎</div>` +
-    `<div class="dz-txt">Drag files here or <strong>browse</strong></div>` +
-    `<input type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.txt">`;
-
-  const fileInput = dropZone.querySelector('input');
-  const fileList  = document.createElement('div');
-  fileList.className = 'flist';
-
-  const renderFileList = () => {
-    fileList.innerHTML = '';
-    editBuffer.files.forEach((f, idx) => {
-      const item = document.createElement('div');
-      item.className = 'fitem';
-
-      const thumb = document.createElement('div');
-      thumb.className = 'fthumb';
-      if (f.dataUrl && f.type && f.type.startsWith('image/')) {
-        const img = document.createElement('img');
-        img.src = f.dataUrl;
-        thumb.appendChild(img);
-      } else {
-        thumb.textContent = fileIcon(f.type);
-      }
-
-      const fname = document.createElement('span');
-      fname.className = 'fname';
-      fname.title     = f.name;
-      fname.textContent = f.name;
-
-      const fsize = document.createElement('span');
-      fsize.className   = 'fsize';
-      fsize.textContent = formatFileSize(f.size || 0);
-
-      const dlBtn = document.createElement('button');
-      dlBtn.className   = 'ficon-btn dl';
-      dlBtn.title       = 'Download';
-      dlBtn.textContent = '⬇';
-      dlBtn.addEventListener('click', () => downloadFile(f));
-
-      const rmBtn = document.createElement('button');
-      rmBtn.className   = 'ficon-btn rm';
-      rmBtn.title       = 'Remove';
-      rmBtn.textContent = '×';
-      rmBtn.addEventListener('click', () => {
-        editBuffer.files.splice(idx, 1);
-        renderFileList();
-      });
-
-      item.appendChild(thumb);
-      item.appendChild(fname);
-      item.appendChild(fsize);
-      item.appendChild(dlBtn);
-      item.appendChild(rmBtn);
-      fileList.appendChild(item);
-    });
-  };
-
-  const addFiles = async files => {
-    for (const f of files) {
-      const dataUrl = await readFileAsBase64(f);
-      editBuffer.files.push({ name: f.name, size: f.size, type: f.type, dataUrl });
-    }
-    renderFileList();
-  };
-
-  fileInput.addEventListener('change', () => addFiles(Array.from(fileInput.files)));
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-on'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-on'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault();
-    dropZone.classList.remove('drag-on');
-    if (e.dataTransfer.files.length) addFiles(Array.from(e.dataTransfer.files));
-  });
-
-  renderFileList();
-  filesFg.appendChild(dropZone);
-  filesFg.appendChild(fileList);
-  body.appendChild(filesFg);
-
-  // ── LinkedIn export ─────────────────────────
-  const divider = document.createElement('hr');
-  divider.className = 'mdivider';
-  body.appendChild(divider);
-
-  const liBox = document.createElement('div');
-  liBox.className = 'li-box';
-  liBox.innerHTML =
-    `<div class="li-hdr">` +
-      `<svg width="13" height="13" viewBox="0 0 24 24" fill="#1D4ED8"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>` +
-      `Export for LinkedIn` +
-    `</div>` +
-    `<div class="li-btns" id="li-btns"></div>`;
-
-  const liButtons = liBox.querySelector('#li-btns');
-
-  const addLiBtn = (icon, label, handler) => {
-    const btn = document.createElement('button');
-    btn.className = 'li-btn';
-    btn.innerHTML = `${icon} ${label}`;
-    btn.addEventListener('click', handler);
-    liButtons.appendChild(btn);
-  };
-
-  addLiBtn('📋', 'Copy text', () => {
-    const text = buildPostText();
-    navigator.clipboard.writeText(text)
-      .then(() => showToast('Copied to clipboard ✓'))
-      .catch(() => {
-        // Fallback for browsers without clipboard API
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-        showToast('Copied ✓');
-      });
-  });
-
-  addLiBtn('📄', 'Download .txt', () => {
-    const blob = new Blob([buildPostText()], { type: 'text/plain' });
-    triggerDownload(URL.createObjectURL(blob), (editBuffer.title || 'post') + '.txt');
-  });
-
-  if (editBuffer.files.length) {
-    addLiBtn('⬇', 'Download all files', () => {
-      editBuffer.files.forEach(f => downloadFile(f));
-    });
-  }
-
-  body.appendChild(liBox);
-
   // ── Footer buttons ───────────────────────────
   if (!isNew) {
     const delBtn = document.createElement('button');
@@ -808,8 +623,9 @@ function buildPostModal(isNew) {
       if (!confirm('Delete this post?')) return;
       // Also delete any repeat children
       Object.keys(state.posts).forEach(id => {
-        if (state.posts[id].parentId === editingId) delete state.posts[id];
+        if (state.posts[id].parentId === editingId) { remoteDeletePost(id); delete state.posts[id]; }
       });
+      remoteDeletePost(editingId);
       delete state.posts[editingId];
       saveState();
       render();
@@ -842,26 +658,19 @@ function buildPostModal(isNew) {
   ftr.appendChild(saveBtn);
 }
 
-/** Build the "title + body" text for LinkedIn export */
-function buildPostText() {
-  const parts = [];
-  if (editBuffer.title) parts.push(editBuffer.title);
-  if (editBuffer.text)  parts.push(editBuffer.text);
-  return parts.join('\n\n').trim();
-}
-
 function commitPost() {
-  if (!editBuffer.title && !editBuffer.text) {
-    showToast('Add a title or content first');
+  if (!editBuffer.title) {
+    showToast('Add a post title first');
     return;
   }
 
+  const isNew = !editingId;
   const post = { ...editBuffer };
 
   // Remove old repeat children when re-saving
   if (editingId) {
     Object.keys(state.posts).forEach(id => {
-      if (state.posts[id].parentId === editingId) delete state.posts[id];
+      if (state.posts[id].parentId === editingId) { remoteDeletePost(id); delete state.posts[id]; }
     });
   }
 
@@ -870,10 +679,11 @@ function commitPost() {
   }
 
   state.posts[post.id] = post;
+  if (isNew) logActivity('created', post);
   saveState();
   render();
   closePostModal();
-  showToast(editingId ? 'Post updated ✓' : 'Post created ✓');
+  showToast(isNew ? 'Post created ✓' : 'Post updated ✓');
 }
 
 function duplicatePost(id) {
@@ -886,9 +696,9 @@ function duplicatePost(id) {
     parentId:      id,
     repeatType:    'none',   // the copy doesn't inherit the repeat schedule
     repeatEndDate: '',
-    files:         (src.files || []).map(f => ({ ...f })),
   };
   state.posts[copy.id] = copy;
+  logActivity('duplicated', copy);
   saveState();
   render();
   showToast('Post duplicated ✓');
@@ -945,20 +755,7 @@ function makeFormGroup(label) {
   return group;
 }
 
-// ── File helpers ─────────────────────────────────
-
-function readFileAsBase64(file) {
-  return new Promise(resolve => {
-    const reader = new FileReader();
-    reader.onload  = e => resolve(e.target.result);
-    reader.readAsDataURL(file);
-  });
-}
-
-function downloadFile(f) {
-  if (!f.dataUrl) { showToast('No file data available'); return; }
-  triggerDownload(f.dataUrl, f.name);
-}
+// ── Download helper ──────────────────────────────
 
 function triggerDownload(href, filename) {
   const a = document.createElement('a');
@@ -1012,6 +809,7 @@ function buildCampaignModal() {
         showToast('You need at least one campaign');
         return;
       }
+      remoteDeleteCampaign(c.id);
       delete state.campaigns[c.id];
       saveState();
       buildCampaignModal();
@@ -1088,6 +886,173 @@ function buildCampaignModal() {
 }
 
 // ─────────────────────────────────────────────────
+// ACTIVITY LOG + BACKUP / SYNC
+// ─────────────────────────────────────────────────
+
+/** Record an entry in the activity log (newest first). */
+function logActivity(action, post) {
+  const camp = state.campaigns[post.campaignId];
+  state.log.unshift({
+    at:       new Date().toISOString(),
+    action,                                   // 'created' | 'duplicated'
+    title:    post.title || 'Untitled',
+    campaign: camp ? camp.name : '',
+    date:     post.date,
+  });
+  if (state.log.length > 1000) state.log.length = 1000; // keep it bounded
+}
+
+function openBackupModal() {
+  buildBackupModal();
+  document.getElementById('backup-ov').classList.add('open');
+}
+
+function closeBackupModal() {
+  document.getElementById('backup-ov').classList.remove('open');
+}
+
+function buildBackupModal() {
+  const body = document.getElementById('backup-modal-body');
+  body.innerHTML = '';
+
+  // ── Share / backup explanation ──────────────
+  const intro = document.createElement('p');
+  intro.style.cssText = 'font-size:12.5px;color:var(--text2);line-height:1.5;margin:-2px 0 2px';
+  intro.innerHTML =
+    'Your calendar is saved in this browser. To <strong>share it with your team</strong> or move it to another computer, ' +
+    'export the file here and have them import it. This is also your backup so nothing gets lost.';
+  body.appendChild(intro);
+
+  // ── Export / Import buttons ─────────────────
+  const actFg  = makeFormGroup('Backup & share');
+  const actRow = document.createElement('div');
+  actRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+
+  const exportBtn = document.createElement('button');
+  exportBtn.className = 'btn btn-p';
+  exportBtn.textContent = '⬇  Export calendar file';
+  exportBtn.addEventListener('click', exportData);
+
+  const importBtn = document.createElement('button');
+  importBtn.className = 'btn btn-s';
+  importBtn.style.position = 'relative';
+  importBtn.textContent = '⬆  Import calendar file';
+  const importInput = document.createElement('input');
+  importInput.type = 'file';
+  importInput.accept = 'application/json,.json';
+  importInput.style.cssText = 'position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%';
+  importInput.addEventListener('change', () => {
+    if (importInput.files.length) importData(importInput.files[0]);
+  });
+  importBtn.appendChild(importInput);
+
+  actRow.appendChild(exportBtn);
+  actRow.appendChild(importBtn);
+  actFg.appendChild(actRow);
+  body.appendChild(actFg);
+
+  const divider = document.createElement('hr');
+  divider.className = 'mdivider';
+  body.appendChild(divider);
+
+  // ── Activity log ────────────────────────────
+  const logFg     = makeFormGroup('Activity log');
+  const logHeader = document.createElement('div');
+  logHeader.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:2px';
+
+  const logCount = document.createElement('span');
+  logCount.style.cssText = 'font-size:11.5px;color:var(--text3);flex:1';
+  logCount.textContent = state.log.length + ' entr' + (state.log.length === 1 ? 'y' : 'ies');
+
+  const logDl = document.createElement('button');
+  logDl.className = 'btn btn-s';
+  logDl.style.cssText = 'padding:5px 11px;font-size:12px';
+  logDl.textContent = 'Download log';
+  logDl.addEventListener('click', downloadLog);
+
+  logHeader.appendChild(logCount);
+  logHeader.appendChild(logDl);
+  logFg.appendChild(logHeader);
+
+  const logList = document.createElement('div');
+  logList.className = 'log-list';
+  if (!state.log.length) {
+    logList.innerHTML = '<div class="log-empty">No activity yet. Create a post to start the log.</div>';
+  } else {
+    state.log.slice(0, 100).forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'log-row';
+      const when = new Date(e.at);
+      const stamp = when.toLocaleDateString() + ' ' +
+        when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      row.innerHTML =
+        `<span class="log-act log-${e.action}">${e.action}</span>` +
+        `<span class="log-ttl">${escHtml(e.title)}</span>` +
+        `<span class="log-meta">${escHtml(e.campaign)} · ${e.date}</span>` +
+        `<span class="log-when">${stamp}</span>`;
+      logList.appendChild(row);
+    });
+  }
+  logFg.appendChild(logList);
+  body.appendChild(logFg);
+}
+
+function exportData() {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    posts:      state.posts,
+    campaigns:  state.campaigns,
+    log:        state.log,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const stamp = dateStr(new Date());
+  triggerDownload(URL.createObjectURL(blob), `content-calendar-${stamp}.json`);
+  showToast('Calendar exported ✓');
+}
+
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    let data;
+    try {
+      data = JSON.parse(e.target.result);
+    } catch (err) {
+      showToast('That file isn’t a valid calendar export');
+      return;
+    }
+    if (!data || typeof data !== 'object' || !data.posts) {
+      showToast('That file isn’t a valid calendar export');
+      return;
+    }
+    const incoming = Object.keys(data.posts || {}).length;
+    if (!confirm(`Import ${incoming} post(s)? This replaces the calendar currently in this browser.`)) return;
+
+    state.posts     = data.posts     || {};
+    state.campaigns = data.campaigns || {};
+    state.log       = data.log       || [];
+    if (!Object.keys(state.campaigns).length) {
+      DEFAULT_CAMPAIGNS.forEach(c => { state.campaigns[c.id] = c; });
+    }
+    saveState();
+    render();
+    buildBackupModal();
+    showToast('Calendar imported ✓');
+  };
+  reader.readAsText(file);
+}
+
+function downloadLog() {
+  const lines = state.log.map(e => {
+    const when = new Date(e.at).toLocaleString();
+    return `[${when}] ${e.action.toUpperCase()} — "${e.title}" (${e.campaign || 'no campaign'}) on ${e.date}`;
+  });
+  const header = 'CONTENT CALENDAR — ACTIVITY LOG\nGenerated ' + new Date().toLocaleString() + '\n' + '='.repeat(48) + '\n\n';
+  const blob = new Blob([header + lines.join('\n') + '\n'], { type: 'text/plain' });
+  triggerDownload(URL.createObjectURL(blob), `content-calendar-log-${dateStr(new Date())}.txt`);
+  showToast('Log downloaded ✓');
+}
+
+// ─────────────────────────────────────────────────
 // NAVIGATION
 // ─────────────────────────────────────────────────
 
@@ -1146,6 +1111,12 @@ document.getElementById('next-btn').addEventListener('click', nextPeriod);
 document.getElementById('today-btn').addEventListener('click', goToday);
 document.getElementById('new-btn').addEventListener('click', () => openNewPost());
 document.getElementById('camp-btn').addEventListener('click', openCampaignModal);
+document.getElementById('backup-btn').addEventListener('click', openBackupModal);
+
+document.getElementById('backup-modal-x').addEventListener('click', closeBackupModal);
+document.getElementById('backup-ov').addEventListener('click', e => {
+  if (e.target === document.getElementById('backup-ov')) closeBackupModal();
+});
 
 document.getElementById('post-modal-x').addEventListener('click', closePostModal);
 document.getElementById('post-ov').addEventListener('click', e => {
@@ -1170,12 +1141,67 @@ document.querySelectorAll('.vtbtn').forEach(btn => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closePostModal(); closeCampaignModal(); }
+  if (e.key === 'Escape') { closePostModal(); closeCampaignModal(); closeBackupModal(); }
 });
+
+// ─────────────────────────────────────────────────
+// CLOUD SYNC (Supabase) — optional, enabled via config.js
+// ─────────────────────────────────────────────────
+
+function setSyncStatus(mode) {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  const map = {
+    connecting: { txt: 'Connecting…', cls: 'sync-connecting' },
+    synced:     { txt: 'Shared · live', cls: 'sync-on' },
+    local:      { txt: 'Local only', cls: 'sync-off' },
+  };
+  const s = map[mode] || map.local;
+  el.textContent = s.txt;
+  el.className = 'sync-pill ' + s.cls;
+  el.title = mode === 'synced'
+    ? 'Connected to your shared calendar — changes sync live across everyone.'
+    : mode === 'local'
+      ? 'Data is saved only in this browser. Add Supabase keys in config.js to share.'
+      : 'Connecting to the shared calendar…';
+}
+
+/** Replace local state with the shared cloud copy and re-render (no push-back). */
+async function syncPull() {
+  const data = await Remote.pull();
+  if (!data) return;
+
+  const remoteEmpty = !Object.keys(data.posts).length && !Object.keys(data.campaigns).length;
+  const haveLocal   = Object.keys(state.posts).length || Object.keys(state.campaigns).length;
+
+  // First-ever connection with an empty cloud: seed it from this browser's data.
+  if (remoteEmpty && haveLocal) {
+    await Remote.pushAll(state.posts, state.campaigns);
+    return;
+  }
+
+  state.posts     = data.posts;
+  state.campaigns = Object.keys(data.campaigns).length ? data.campaigns : state.campaigns;
+  if (!Object.keys(state.campaigns).length) {
+    DEFAULT_CAMPAIGNS.forEach(c => { state.campaigns[c.id] = c; });
+  }
+  cacheLocal();
+  render();
+}
+
+async function initCloud() {
+  if (!(window.Remote && Remote.configured())) { setSyncStatus('local'); return; }
+  setSyncStatus('connecting');
+  const ok = await Remote.init(() => syncPull());  // live-change handler
+  if (!ok) { setSyncStatus('local'); return; }
+  await syncPull();
+  setSyncStatus('synced');
+}
 
 // ─────────────────────────────────────────────────
 // BOOT
 // ─────────────────────────────────────────────────
 
-loadState();
+loadState();   // instant render from local cache
 render();
+initCloud();   // then connect to the shared calendar (if configured)
