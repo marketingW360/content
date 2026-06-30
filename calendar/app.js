@@ -167,6 +167,15 @@ function postsForDate(date) {
     .sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 }
 
+/** All post ids that belong to the same repeat series as `id` (incl. the parent). */
+function seriesMembers(id) {
+  const post = state.posts[id];
+  if (!post) return [];
+  const key = post.parentId || post.id;          // the series' root id
+  return Object.keys(state.posts).filter(pid =>
+    pid === key || state.posts[pid].parentId === key);
+}
+
 // ─────────────────────────────────────────────────
 // DRAG STATE
 // ─────────────────────────────────────────────────
@@ -584,7 +593,7 @@ function buildPostModal(isNew) {
 
   const endLabel = document.createElement('label');
   endLabel.className   = 'fl';
-  endLabel.textContent = 'End date (optional)';
+  endLabel.textContent = 'Repeat until';
 
   const endInput = document.createElement('input');
   endInput.className = 'fi';
@@ -594,6 +603,13 @@ function buildPostModal(isNew) {
 
   endDateGroup.appendChild(endLabel);
   endDateGroup.appendChild(endInput);
+
+  // Sensible default end date so a repeat never runs forever by accident.
+  const defaultEnd = (type) => {
+    const d = parseDate(editBuffer.date || todayStr());
+    d.setMonth(d.getMonth() + (type === 'weekly' ? 3 : 6));
+    return dateStr(d);
+  };
 
   [
     { key: 'none',    label: 'No repeat' },
@@ -608,6 +624,11 @@ function buildPostModal(isNew) {
       repeatRow.querySelectorAll('.tri-btn').forEach(x => { x.className = 'tri-btn on-soft'; });
       btn.className = 'tri-btn on';
       endDateGroup.style.display = key !== 'none' ? 'flex' : 'none';
+      // Pre-fill an end date the first time a repeat is chosen.
+      if (key !== 'none' && !editBuffer.repeatEndDate) {
+        editBuffer.repeatEndDate = defaultEnd(key);
+        endInput.value = editBuffer.repeatEndDate;
+      }
     });
     repeatRow.appendChild(btn);
   });
@@ -618,15 +639,13 @@ function buildPostModal(isNew) {
 
   // ── Footer buttons ───────────────────────────
   if (!isNew) {
+    const members = seriesMembers(editingId);
+
     const delBtn = document.createElement('button');
     delBtn.className   = 'btn btn-r';
-    delBtn.textContent = 'Delete';
+    delBtn.textContent = members.length > 1 ? 'Delete this one' : 'Delete';
     delBtn.addEventListener('click', () => {
       if (!confirm('Delete this post?')) return;
-      // Also delete any repeat children
-      Object.keys(state.posts).forEach(id => {
-        if (state.posts[id].parentId === editingId) { remoteDeletePost(id); delete state.posts[id]; }
-      });
       remoteDeletePost(editingId);
       delete state.posts[editingId];
       saveState();
@@ -635,6 +654,22 @@ function buildPostModal(isNew) {
       showToast('Post deleted');
     });
     ftr.appendChild(delBtn);
+
+    // Only repeating series (more than one linked occurrence) get a "Delete series" action.
+    if (members.length > 1) {
+      const delSeriesBtn = document.createElement('button');
+      delSeriesBtn.className   = 'btn btn-r';
+      delSeriesBtn.textContent = `Delete series (${members.length})`;
+      delSeriesBtn.addEventListener('click', () => {
+        if (!confirm(`Delete the entire repeating series of ${members.length} posts?`)) return;
+        members.forEach(id => { remoteDeletePost(id); delete state.posts[id]; });
+        saveState();
+        render();
+        closePostModal();
+        showToast(`Deleted series (${members.length} posts)`);
+      });
+      ftr.appendChild(delSeriesBtn);
+    }
 
     const dupBtn = document.createElement('button');
     dupBtn.className   = 'btn btn-s';
@@ -1172,17 +1207,20 @@ async function syncPull() {
   const data = await Remote.pull();
   if (!data) return;
 
-  const remoteEmpty = !Object.keys(data.posts).length && !Object.keys(data.campaigns).length;
-  const haveLocal   = Object.keys(state.posts).length || Object.keys(state.campaigns).length;
+  const remotePosts = Object.keys(data.posts).length;
+  const remoteCamps = Object.keys(data.campaigns).length;
+  const localPosts  = Object.keys(state.posts).length;
 
-  // First-ever connection with an empty cloud: seed it from this browser's data.
-  if (remoteEmpty && haveLocal) {
+  // Safety: never let an empty/partial cloud wipe a populated local calendar.
+  // If the cloud has no posts but this browser does, (re)seed the cloud instead.
+  if (remotePosts === 0 && localPosts > 0) {
     await Remote.pushAll(state.posts, state.campaigns);
     return;
   }
 
+  // Adopt the shared calendar as the source of truth.
   state.posts     = data.posts;
-  state.campaigns = Object.keys(data.campaigns).length ? data.campaigns : state.campaigns;
+  state.campaigns = remoteCamps ? data.campaigns : state.campaigns;
   if (!Object.keys(state.campaigns).length) {
     DEFAULT_CAMPAIGNS.forEach(c => { state.campaigns[c.id] = c; });
   }
